@@ -29,6 +29,15 @@ export async function POST(req: NextRequest) {
         messageType = 'text';
 
       } else if (event.message.type === 'audio') {
+  messageType = 'voice';
+  try {
+    const fileBuffer = await getLineContent(event.message.id);
+    userMessage = await transcribeVoice(fileBuffer, 'audio/m4a');
+    userMessage = `[File transcribed]: ${userMessage}`;
+  } catch (error) {
+    await replyMessage(replyToken, 'Could not process that file. Try sending a voice message instead.');
+    continue;
+  }
         // Voice message — transcribe with Whisper
         messageType = 'voice';
         const audioBuffer = await getLineContent(event.message.id);
