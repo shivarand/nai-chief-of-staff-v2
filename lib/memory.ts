@@ -1,3 +1,9 @@
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY!
+);
+console.log('Supabase URL loaded:', !!process.env.SUPABASE_URL);
+console.log('Supabase Key loaded:', !!process.env.SUPABASE_SERVICE_KEY);
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
