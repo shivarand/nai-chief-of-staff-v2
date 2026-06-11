@@ -9,7 +9,7 @@ export async function uploadAudio(audioBuffer: Buffer): Promise<string> {
       'authorization': ASSEMBLYAI_API_KEY,
       'content-type': 'application/octet-stream'
     },
-    body: audioBuffer
+    body: audioBuffer as unknown as BodyInit
   });
 
   if (!response.ok) {
