@@ -143,3 +143,34 @@ export async function buildMemoryContext(): Promise<string> {
 
   return context;
 }
+
+// Save transcription job
+export async function saveTranscriptionJob(
+  transcriptId: string,
+  lineUserId: string
+) {
+  const { error } = await supabase
+    .from("transcription_jobs")
+    .insert({ transcript_id: transcriptId, line_user_id: lineUserId });
+  if (error) console.error("Save transcription job error:", error);
+}
+
+// Get transcription job by transcript ID
+export async function getTranscriptionJob(transcriptId: string) {
+  const { data, error } = await supabase
+    .from("transcription_jobs")
+    .select("*")
+    .eq("transcript_id", transcriptId)
+    .single();
+  if (error) console.error("Get transcription job error:", error);
+  return data;
+}
+
+// Mark transcription job as complete
+export async function completeTranscriptionJob(transcriptId: string) {
+  const { error } = await supabase
+    .from("transcription_jobs")
+    .update({ status: "completed" })
+    .eq("transcript_id", transcriptId);
+  if (error) console.error("Complete transcription job error:", error);
+}

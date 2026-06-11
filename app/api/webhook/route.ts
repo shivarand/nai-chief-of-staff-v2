@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { replyMessage, validateSignature, getLineContent } from '@/lib/line';
 import { askClaude } from '@/lib/claude';
 import { saveConversation } from '@/lib/memory';
-import { transcribeVoice } from '@/lib/voice';
+
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
@@ -27,19 +27,43 @@ export async function POST(req: NextRequest) {
         userMessage = event.message.text;
         messageType = 'text';
 
-      } else if (event.message.type === 'audio') {
-        messageType = 'voice';
+    } else if (event.message.type === 'audio' || event.message.type === 'file') {
+      // Handle voice messages and file attachments asynchronously via AssemblyAI
+      messageType = 'voice';
+
+      try {
+        const { uploadAudio, submitTranscription } = await import('@/lib/assemblyai');
+        const { saveTranscriptionJob } = await import('@/lib/memory');
+
+        // Reply immediately so user knows it's being processed
+        await replyMessage(replyToken, '🎙️ Got your recording! Processing it now...\n\nI\'ll send you the full analysis in 1-2 minutes.');
+
+        // Get audio content from LINE
         const audioBuffer = await getLineContent(event.message.id);
-        const transcribed = await transcribeVoice(audioBuffer, 'audio/m4a');
-        userMessage = `[Voice message]: ${transcribed}`;
 
-      } else if (event.message.type === 'file') {
-        messageType = 'voice';
-        const fileBuffer = await getLineContent(event.message.id);
-        const transcribed = await transcribeVoice(fileBuffer, 'audio/m4a');
-        userMessage = `[Audio file]: ${transcribed}`;
+        // Upload to AssemblyAI
+        const uploadUrl = await uploadAudio(audioBuffer);
 
-      } else if (event.message.type === 'image') {
+        // Submit for transcription with webhook callback URL
+        const webhookUrl = `https://nai-chief-of-staff-v2.vercel.app/api/transcription-callback`;
+        const transcriptId = await submitTranscription(uploadUrl, webhookUrl);
+
+        // Save job to Supabase so we know which LINE user to notify
+        const lineUserId = event.source?.userId || process.env.LINE_USER_ID || '';
+        await saveTranscriptionJob(transcriptId, lineUserId);
+
+        console.log('Transcription job submitted:', transcriptId);
+
+        // Skip the normal Claude processing for this message type
+        continue;
+
+      } catch (error) {
+        console.error('AssemblyAI error:', error);
+        await replyMessage(replyToken, 'Could not process that recording. Try again or send a shorter clip.');
+        continue;
+      }
+
+    } else if (event.message.type === 'image') {
         messageType = 'image';
         const imageBuffer = await getLineContent(event.message.id);
         const base64Image = imageBuffer.toString('base64');
