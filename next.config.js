@@ -1,3 +1,4 @@
+// v2.1
 /** @type {import("next").NextConfig} */
 const nextConfig = {};
 
