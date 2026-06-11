@@ -1,0 +1,59 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { pushMessage } from '@/lib/line';
+import { askClaude } from '@/lib/claude';
+import { getOpenTasks, getTodaySummary } from '@/lib/memory';
+
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const now = new Date().toLocaleDateString('en-GB', {
+    timeZone: 'Asia/Bangkok',
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+  });
+
+  const openTasks = await getOpenTasks();
+  const taskSummary = openTasks.length > 0
+    ? openTasks.slice(0, 8).map((t: any) => `[${t.business}] ${t.task}`).join('\n')
+    : 'No open tasks recorded yet';
+
+  const prompt = `Generate Nai's morning briefing. Today is ${now}.
+
+Open tasks in system:
+${taskSummary}
+
+Format:
+Good morning Nai 🌅
+
+[One sentence — what today needs to be about for Phoenix Protocol]
+
+━━━━━━━━━━
+TODAY'S FOCUS
+━━━━━━━━━━
+• [MIT 1 — most important task]
+• [MIT 2]
+• [MIT 3]
+
+━━━━━━━━━━
+OPEN ITEMS TO CLOSE THIS WEEK
+━━━━━━━━━━
+[2-3 most urgent open tasks from the list above]
+
+━━━━━━━━━━
+ONE QUESTION
+━━━━━━━━━━
+[One direct question about something he is avoiding or needs to decide]
+
+Reply with your brain-dump and I will structure your day.`;
+
+  try {
+    const message = await askClaude(prompt);
+    await pushMessage(message);
+    return NextResponse.json({ status: 'morning briefing sent' });
+  } catch (error) {
+    console.error('Morning cron error:', error);
+    return NextResponse.json({ error: 'Failed' }, { status: 500 });
+  }
+}
