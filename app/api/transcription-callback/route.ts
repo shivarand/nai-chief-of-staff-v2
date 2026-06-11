@@ -35,6 +35,10 @@ export async function POST(req: NextRequest) {
       console.error('Job not found:', transcriptId);
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
+    if (job.status === 'completed') {
+  console.log('Already processed, skipping:', transcriptId);
+  return NextResponse.json({ status: 'already processed' });
+}
 
     // Get the full transcript
     const transcriptText = await getTranscript(transcriptId);
