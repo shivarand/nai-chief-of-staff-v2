@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { replyMessage, validateSignature, getLineContent } from '@/lib/line';
 import { askClaude } from '@/lib/claude';
-import { saveConversation, updateTodaySummary } from '@/lib/memory';
+import { saveConversation } from '@/lib/memory';
 import { transcribeVoice } from '@/lib/voice';
 
 export async function POST(req: NextRequest) {
@@ -24,40 +24,35 @@ export async function POST(req: NextRequest) {
 
     try {
       if (event.message.type === 'text') {
-        // Text message
         userMessage = event.message.text;
         messageType = 'text';
 
       } else if (event.message.type === 'audio') {
-  messageType = 'voice';
-  try {
-    const fileBuffer = await getLineContent(event.message.id);
-    userMessage = await transcribeVoice(fileBuffer, 'audio/m4a');
-    userMessage = `[File transcribed]: ${userMessage}`;
-  } catch (error) {
-    await replyMessage(replyToken, 'Could not process that file. Try sending a voice message instead.');
-    continue;
-  }
-        // Voice message — transcribe with Whisper
         messageType = 'voice';
         const audioBuffer = await getLineContent(event.message.id);
-        userMessage = await transcribeVoice(audioBuffer, 'audio/m4a');
-        userMessage = `[Voice message transcribed]: ${userMessage}`;
+        const transcribed = await transcribeVoice(audioBuffer, 'audio/m4a');
+        userMessage = `[Voice message]: ${transcribed}`;
+
+      } else if (event.message.type === 'file') {
+        messageType = 'voice';
+        const fileBuffer = await getLineContent(event.message.id);
+        const transcribed = await transcribeVoice(fileBuffer, 'audio/m4a');
+        userMessage = `[Audio file]: ${transcribed}`;
 
       } else if (event.message.type === 'image') {
-        // Image — send to Claude Vision
         messageType = 'image';
         const imageBuffer = await getLineContent(event.message.id);
         const base64Image = imageBuffer.toString('base64');
 
         const Anthropic = require('@anthropic-ai/sdk');
         const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-        const memoryContext = await (await import('@/lib/memory')).buildMemoryContext();
+        const { buildMemoryContext } = await import('@/lib/memory');
+        const memoryContext = await buildMemoryContext();
 
         const response = await client.messages.create({
           model: 'claude-sonnet-4-6',
           max_tokens: 1024,
-          system: `You are Nai's AI chief of staff. Analyze this image in the context of his businesses: Planet Furniture factory, MuCat cat hotel, or stone sink products. Be direct and specific. ${memoryContext ? 'Context: ' + memoryContext : ''}`,
+          system: `You are Nai's AI chief of staff. Analyze this image in the context of his businesses: Planet Furniture factory, MuCat cat hotel, or stone sink products. Be direct and specific.${memoryContext ? ' Context: ' + memoryContext : ''}`,
           messages: [{
             role: 'user',
             content: [
@@ -67,28 +62,31 @@ export async function POST(req: NextRequest) {
           }]
         });
 
-        const reply = response.content[0].type === 'text' ? response.content[0].text : 'Could not analyze image.';
+        const reply = response.content[0].type === 'text'
+          ? response.content[0].text
+          : 'Could not analyze image.';
+
         await replyMessage(replyToken, reply);
         await saveConversation('[Image sent]', reply, 'image');
         continue;
 
       } else {
-        continue; // Skip stickers, files, etc.
+        continue;
       }
 
-      // Get Claude response with memory
       const now = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
       const reply = await askClaude(`[${now}]\n\n${userMessage}`);
 
-      // Reply to user
       await replyMessage(replyToken, reply);
-
-      // Save to memory
       await saveConversation(userMessage, reply, messageType);
 
     } catch (error) {
       console.error('Webhook error:', error);
-      await replyMessage(replyToken, 'An error occurred while processing your message.');
+      try {
+        await replyMessage(replyToken, 'An error occurred while processing your message.');
+      } catch (e) {
+        console.error('Reply error:', e);
+      }
     }
   }
 
