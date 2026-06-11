@@ -1,22 +1,22 @@
 export async function transcribeVoice(audioBuffer: Buffer, mimeType: string): Promise<string> {
   const formData = new FormData();
-  const blob = new Blob([audioBuffer], { type: mimeType });
-  formData.append("file", blob, "audio.m4a");
-  formData.append("model", "whisper-1");
-  formData.append("language", "th"); // Thai primary, also understands English
+  const blob = new Blob([audioBuffer as unknown as BlobPart], { type: mimeType });
+  formData.append('file', blob, 'audio.m4a');
+  formData.append('model', 'whisper-1');
+  formData.append('language', 'th');
 
-  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
+  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
     headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
     },
-    body: formData,
+    body: formData
   });
 
   if (!response.ok) {
     const err = await response.text();
-    console.error("Whisper error:", err);
-    throw new Error("Voice transcription failed");
+    console.error('Whisper error:', err);
+    throw new Error('Voice transcription failed');
   }
 
   const data = await response.json();
