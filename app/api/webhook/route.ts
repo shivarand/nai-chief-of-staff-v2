@@ -14,9 +14,14 @@ export async function POST(req: NextRequest) {
 
   const body = JSON.parse(rawBody);
   const events = body.events || [];
+  const processedIds = new Set<string>();
 
   for (const event of events) {
     if (event.type !== 'message') continue;
+
+    const messageId = event.message.id;
+    if (processedIds.has(messageId)) continue;
+    processedIds.add(messageId);
 
     const replyToken = event.replyToken;
     let userMessage = '';
