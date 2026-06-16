@@ -1,12 +1,10 @@
+import { createClient } from '@supabase/supabase-js';
+
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_KEY!
 );
-console.log('Supabase URL loaded:', !!process.env.SUPABASE_URL);
-console.log('Supabase Key loaded:', !!process.env.SUPABASE_SERVICE_KEY);
-import { createClient } from '@supabase/supabase-js';
 
-// Save a conversation exchange
 export async function saveConversation(
   userMessage: string,
   assistantReply: string,
@@ -23,24 +21,20 @@ export async function saveConversation(
     })
     .select()
     .single();
-
   if (error) console.error('Save conversation error:', error);
   return data;
 }
 
-// Get recent conversations for context (last 15)
-export async function getRecentConversations(limit: number = 15) {
+export async function getRecentConversations(limit: number = 30) {
   const { data, error } = await supabase
     .from('conversations')
     .select('user_message, assistant_reply, message_type, created_at')
     .order('created_at', { ascending: false })
     .limit(limit);
-
   if (error) console.error('Get conversations error:', error);
   return (data || []).reverse();
 }
 
-// Get today's summary if it exists
 export async function getTodaySummary() {
   const today = new Date().toISOString().split('T')[0];
   const { data, error } = await supabase
@@ -48,12 +42,10 @@ export async function getTodaySummary() {
     .select('*')
     .eq('summary_date', today)
     .single();
-
   if (error && error.code !== 'PGRST116') console.error('Get summary error:', error);
   return data;
 }
 
-// Update today's summary
 export async function updateTodaySummary(
   summary: string,
   openTasks: string[] = [],
@@ -71,23 +63,19 @@ export async function updateTodaySummary(
       energy_level: energyLevel,
       updated_at: new Date().toISOString()
     });
-
   if (error) console.error('Update summary error:', error);
 }
 
-// Get open tasks
 export async function getOpenTasks() {
   const { data, error } = await supabase
     .from('tasks')
     .select('*')
     .eq('status', 'open')
     .order('created_at', { ascending: false });
-
   if (error) console.error('Get tasks error:', error);
   return data || [];
 }
 
-// Save a task
 export async function saveTask(
   task: string,
   business: string,
@@ -102,22 +90,69 @@ export async function saveTask(
       priority,
       source_conversation: sourceConversationId
     });
-
   if (error) console.error('Save task error:', error);
 }
 
-// Build memory context string for Claude
+export async function saveFactOverride(fact: string) {
+  const { error } = await supabase
+    .from('fact_overrides')
+    .insert({ fact });
+  if (error) console.error('Save fact override error:', error);
+}
+
+export async function getFactOverrides(): Promise<string> {
+  const { data, error } = await supabase
+    .from('fact_overrides')
+    .select('fact, created_at')
+    .order('created_at', { ascending: true });
+  if (error) { console.error('Get fact overrides error:', error); return ''; }
+  if (!data || data.length === 0) return '';
+  return data.map((f: any) => `- ${f.fact}`).join('\n');
+}
+
+export async function getOpenLoops() {
+  const { data, error } = await supabase
+    .from('open_loops')
+    .select('*')
+    .eq('status', 'open')
+    .order('created_at', { ascending: true });
+  if (error) console.error('Get open loops error:', error);
+  return data || [];
+}
+
+export async function addOpenLoop(question: string) {
+  const existing = await getOpenLoops();
+  if (existing.some((l: any) => l.question.toLowerCase().includes(question.toLowerCase().slice(0, 20)))) return;
+  const { error } = await supabase.from('open_loops').insert({ question });
+  if (error) console.error('Add open loop error:', error);
+}
+
+export async function resolveOpenLoop(id: string) {
+  const { error } = await supabase
+    .from('open_loops')
+    .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) console.error('Resolve open loop error:', error);
+}
+
 export async function buildMemoryContext(): Promise<string> {
-  const [recentConvos, todaySummary, openTasks] = await Promise.all([
-    getRecentConversations(15),
+  const [recentConvos, todaySummary, openTasks, openLoops] = await Promise.all([
+    getRecentConversations(30),
     getTodaySummary(),
-    getOpenTasks()
+    getOpenTasks(),
+    getOpenLoops()
   ]);
 
   let context = '';
 
   if (todaySummary) {
     context += `TODAY'S SUMMARY SO FAR:\n${todaySummary.summary}\n\n`;
+  }
+
+  if (openLoops.length > 0) {
+    context += 'UNANSWERED QUESTIONS (you already asked these — do not re-ask blindly; either chase once or move on):\n';
+    openLoops.forEach((l: any) => { context += `- ${l.question}\n`; });
+    context += '\n';
   }
 
   if (openTasks.length > 0) {
@@ -144,33 +179,27 @@ export async function buildMemoryContext(): Promise<string> {
   return context;
 }
 
-// Save transcription job
-export async function saveTranscriptionJob(
-  transcriptId: string,
-  lineUserId: string
-) {
+export async function saveTranscriptionJob(transcriptId: string, lineUserId: string) {
   const { error } = await supabase
-    .from("transcription_jobs")
+    .from('transcription_jobs')
     .insert({ transcript_id: transcriptId, line_user_id: lineUserId });
-  if (error) console.error("Save transcription job error:", error);
+  if (error) console.error('Save transcription job error:', error);
 }
 
-// Get transcription job by transcript ID
 export async function getTranscriptionJob(transcriptId: string) {
   const { data, error } = await supabase
-    .from("transcription_jobs")
-    .select("*")
-    .eq("transcript_id", transcriptId)
+    .from('transcription_jobs')
+    .select('*')
+    .eq('transcript_id', transcriptId)
     .single();
-  if (error) console.error("Get transcription job error:", error);
+  if (error) console.error('Get transcription job error:', error);
   return data;
 }
 
-// Mark transcription job as complete
 export async function completeTranscriptionJob(transcriptId: string) {
   const { error } = await supabase
-    .from("transcription_jobs")
-    .update({ status: "completed" })
-    .eq("transcript_id", transcriptId);
-  if (error) console.error("Complete transcription job error:", error);
+    .from('transcription_jobs')
+    .update({ status: 'completed' })
+    .eq('transcript_id', transcriptId);
+  if (error) console.error('Complete transcription job error:', error);
 }
