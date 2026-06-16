@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { pushMessage } from '@/lib/line';
 import { askClaude } from '@/lib/claude';
-import { getOpenTasks, getTodaySummary } from '@/lib/memory';
+import { getOpenTasks, getOpenLoops } from '@/lib/memory';
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
@@ -19,6 +19,11 @@ export async function GET(req: NextRequest) {
     ? openTasks.slice(0, 8).map((t: any) => `[${t.business}] ${t.task}`).join('\n')
     : 'No open tasks recorded yet';
 
+  const openLoops = await getOpenLoops();
+  const loopsText = openLoops.length > 0
+    ? openLoops.slice(0, 5).map((l: any) => `- ${l.question}`).join('\n')
+    : 'None outstanding';
+
   const prompt = `Generate Nai's morning briefing. Today is ${now}.
 
 Open tasks in system:
@@ -32,14 +37,19 @@ Good morning Nai 🌅
 ━━━━━━━━━━
 TODAY'S FOCUS
 ━━━━━━━━━━
-• [MIT 1 — most important task]
-• [MIT 2]
-• [MIT 3]
+- [MIT 1 — most important task]
+- [MIT 2]
+- [MIT 3]
 
 ━━━━━━━━━━
 OPEN ITEMS TO CLOSE THIS WEEK
 ━━━━━━━━━━
 [2-3 most urgent open tasks from the list above]
+
+━━━━━━━━━━
+STILL WAITING ON YOUR ANSWER
+━━━━━━━━━━
+${loopsText}
 
 ━━━━━━━━━━
 ONE QUESTION
